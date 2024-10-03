@@ -74,14 +74,14 @@ Fast Mode: Enabled
 
 ### If you're missing slides:
 ---
-Decrease the Threshold value
-Decrease the Similar Slides Removal value
-Disable Fast Mode
+**Decrease the Threshold value**
+**Decrease the Similar Slides Removal value**
+**Disable Fast Mode**
 
 ### If you're getting too many duplicate or similar slides:
 ---
-Increase the Threshold value
-Increase the Similar Slides Removal value
+**Increase the Threshold value**
+**Increase the Similar Slides Removal value**
 
 For long videos, use Fast Mode to reduce processing time. Disable it if you notice missing slides.
 The PDF output is great for an overview, while PNG or JPEG outputs are useful if you need to edit individual slides.
