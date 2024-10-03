@@ -1,4 +1,7 @@
-opencv-python
-numpy
-FPDF
-pytube
+PyQt5 
+opencv-python 
+numpy 
+fpdf 
+scikit-image 
+imagehash 
+Pillow
