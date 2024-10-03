@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 import sys
 import os
 from PyQt5.QtWidgets import (QApplication, QWidget, QLabel, QVBoxLayout, QPushButton, 
@@ -73,7 +72,6 @@ class ExtractorThread(QThread):
         self.format = format
         self.similarity_threshold = similarity_threshold
         self.is_running = True
-
 
     def run(self):
         # Main extraction logic
@@ -168,23 +166,63 @@ class ExtractorThread(QThread):
 
     def stop(self):
         self.is_running = False
-
+    
     def save_as_pdf(self, image_list):
-    # Save extracted slides as PDF
-        pdf = FPDF(orientation='L')
-        for idx, image in enumerate(image_list):
-            temp_path = f'temp/temp{idx}.png'
-            cv2.imwrite(temp_path, image)
-            pdf.add_page()
-            pdf.image(temp_path, 0, 0, 297, 210)
-            os.remove(temp_path)
-        pdf.output(self.output_path, "F")
+        # Create a temporary directory
+        temp_dir = os.path.join(os.path.dirname(self.output_path), 'temp_slides')
+        os.makedirs(temp_dir, exist_ok=True)
+        try:
+            pdf = FPDF(orientation='L')
+            for idx, image in enumerate(image_list):
+                temp_path = os.path.join(temp_dir, f'temp{idx}.png')
+                cv2.imwrite(temp_path, image)
+                pdf.add_page()
+                pdf.image(temp_path, 0, 0, 297, 210)
+            pdf.output(self.output_path, "F")
+        except Exception as e:
+            print(f"Error saving PDF: {str(e)}")
+            self.finished.emit(f"Error saving PDF: {str(e)}")
+        finally:
+            # Clean up temporary files
+            for file in os.listdir(temp_dir):
+                os.remove(os.path.join(temp_dir, file))
+            os.rmdir(temp_dir)
 
     def save_as_images(self, image_list, format):
-    # Save extracted slides as individual images
-        for idx, image in enumerate(image_list):
-            filename = f'slide_{idx:03d}.{format}'
-            cv2.imwrite(os.path.join(self.output_path, filename), image)
+        # Ensure the output directory exists
+        os.makedirs(self.output_path, exist_ok=True)
+
+        try:
+            for idx, image in enumerate(image_list):
+                filename = f'slide_{idx:03d}.{format}'
+                output_file = os.path.join(self.output_path, filename)
+                
+                # For PNG format
+                if format.lower() == 'png':
+                    cv2.imwrite(output_file, image)
+                
+                # For JPEG format
+                elif format.lower() == 'jpeg' or format.lower() == 'jpg':
+                    # Convert from BGR to RGB color space
+                    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                    # Use PIL for JPEG saving to ensure better quality control
+                    pil_image = Image.fromarray(image_rgb)
+                    pil_image.save(output_file, format='JPEG', quality=95)
+                
+                else:
+                    raise ValueError(f"Unsupported image format: {format}")
+
+                # Emit progress updates
+                progress = int((idx + 1) / len(image_list) * 100)
+                self.progress.emit(progress)
+
+        except Exception as e:
+            error_message = f"Error saving images: {str(e)}"
+            print(error_message)
+            self.finished.emit(error_message)
+        else:
+            success_message = f"Slides extracted to: {self.output_path}"
+            self.finished.emit(success_message)
 
 # Main GUI class for the Slide Extractor application
 class SlideExtractorGUI(QWidget):
