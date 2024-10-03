@@ -32,7 +32,9 @@ Clone this repository or download the source code.
   pip install PyQt5 opencv-python numpy fpdf scikit-image imagehash Pillow
 ```
 OR
-
+```bash
+  pip install -r requirements.txt
+```
 
 ### Run the application:
 ```bash
