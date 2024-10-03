@@ -1,9 +1,8 @@
-# SlideShowExtractor
+# Slide Show Extractor GUI version
 
-<img src="https://github.com/Akeeal/SlideShowExtractor/blob/main/Screenshot%202024-10-03%20at%2015.52.32.png" width=50% height=50%>
-![App Screenshot](https://github.com/Akeeal/SlideShowExtractor/blob/main/Screenshot%202024-10-03%20at%2015.52.32.png)
+<img src="https://github.com/Akeeal/SlideShowExtractor/blob/main/Screenshot%202024-10-03%20at%2015.52.32.png" width=40% height=40%>
 
-Slide Extractor the GUI version is a Python application that extracts slides from video files. It uses computer vision techniques to identify unique slides and can output them as PDF, PNG, or JPEG files.
+Slide Extractor the GUI version is a Python application that extracts slides from video files. It uses computer vision techniques to identify unique slides and can output them as PDF, PNG, or JPEG files. I've expanded on https://github.com/TalentedB/Slideshow-Extractor and created a GUI, as I couldn't find one. So I created it. I hope it helps other students out there.
 
 ### Features
 
