@@ -31,6 +31,8 @@ Clone this repository or download the source code.
 ```bash
   pip install PyQt5 opencv-python numpy fpdf scikit-image imagehash Pillow
 ```
+OR
+
 
 ### Run the application:
 ```bash
