@@ -40,7 +40,7 @@ OR
 
 ### Run the application:
 ```bash
-  python slide_extractor.py
+  python slide_extractor_gui.py
 ```
 
 ### Usage
