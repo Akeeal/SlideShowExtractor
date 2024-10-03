@@ -19,16 +19,14 @@ Clone this repository or download the source code.
   git clone https://github.com/Akeeal/SlideShowExtractor.git
 ```
 Install the required dependencies:
-Copy
 
 ```bash
-  npm pip install PyQt5 opencv-python numpy fpdf scikit-image imagehash Pillow
+  pip install PyQt5 opencv-python numpy fpdf scikit-image imagehash Pillow
 ```
-pip install PyQt5 opencv-python numpy fpdf scikit-image imagehash Pillow
 
 Run the application:
-Copypython slide_extractor.py
 
+python slide_extractor.py
 
 Usage
 
