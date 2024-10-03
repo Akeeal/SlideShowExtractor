@@ -6,6 +6,7 @@ Slide Extractor the GUI version is a Python application that extracts slides fro
 
 ### Features
 ---
+
 - Extract slides from various video formats (MP4, AVI, MOV, MKV)
 - Output slides as PDF, PNG, or JPEG
 - Adjustable threshold for slide detection
@@ -15,6 +16,7 @@ Slide Extractor the GUI version is a Python application that extracts slides fro
 
 ### Installation
 ---
+
 Ensure you have installed Python 3.7 or later on your system.
 Clone this repository or download the source code.
 
@@ -43,6 +45,7 @@ OR
 
 ### Usage
 ---
+
 Launch the application by running slide_extractor.py.
 Select a video file:
 
@@ -51,12 +54,14 @@ Drag and drop a video file onto the application window.
 
 ### Adjust the settings:
 ---
+
 Threshold: Controls the sensitivity of slide detection. Lower values detect more subtle changes.
 Similar Slides Removal: Adjusts how aggressively similar slides are filtered out.
 Fast Mode: Skips frames for quicker processing (enabled by default).
 
 ### Choose the output format:
 ---
+
 Click "Extract to PDF" for a single PDF file containing all slides.
 
 Click "Extract to PNG" or "Extract to JPEG" for individual image files.
@@ -66,6 +71,7 @@ Click "Open Output" to view the extracted slides.
 
 Recommendations
 ---
+
 ### Start with the default settings and adjust as needed:
 
 Threshold: 2.0
@@ -74,11 +80,15 @@ Fast Mode: Enabled
 
 ### If you're missing slides:
 ---
+
 *Decrease the Threshold value*
+
 *Decrease the Similar Slides Removal value*
+
 *Disable Fast Mode*
 
 ### If you're getting too many duplicate or similar slides:
+
 ---
 *Increase the Threshold value*
 *Increase the Similar Slides Removal value*
