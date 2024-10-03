@@ -46,10 +46,12 @@ OR
 ### Usage
 ---
 
-Launch the application by running slide_extractor.py.
+Launch the application by running slide_extractor_gui.py
+
 Select a video file:
 
-Click the "Select Video File" button, or
+Click the "Select Video File" button, 
+or
 Drag and drop a video file onto the application window.
 
 ### Adjust the settings:
