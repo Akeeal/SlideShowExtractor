@@ -16,8 +16,7 @@ Ensure you have Python 3.7 or later installed on your system.
 Clone this repository or download the source code.
 
 ```bash
-  git clone [link-to-project](https://github.com/Akeeal/SlideShowExtractor/tree/main
-)
+  git clone https://github.com/Akeeal/SlideShowExtractor/tree/main
 ```
 Install the required dependencies:
 Copy
