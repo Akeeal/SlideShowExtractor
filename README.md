@@ -5,7 +5,7 @@
 Slide Extractor the GUI version is a Python application that extracts slides from video files. It uses computer vision techniques to identify unique slides and can output them as PDF, PNG, or JPEG files. I've expanded on https://github.com/TalentedB/Slideshow-Extractor and created a GUI, as I couldn't find one. So I created it. I hope it helps other students out there.
 
 ### Features
-
+---
 Extract slides from various video formats (MP4, AVI, MOV, MKV)
 Output slides as PDF, PNG, or JPEG
 Adjustable threshold for slide detection
@@ -14,7 +14,7 @@ Fast mode for quicker processing
 User-friendly GUI with drag-and-drop functionality
 
 ### Installation
-
+---
 Ensure you have installed Python 3.7 or later on your system.
 Clone this repository or download the source code.
 
@@ -38,7 +38,7 @@ Clone this repository or download the source code.
 ```
 
 ### Usage
-
+---
 Launch the application by running slide_extractor.py.
 Select a video file:
 
