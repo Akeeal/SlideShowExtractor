@@ -12,11 +12,17 @@ User-friendly GUI with drag-and-drop functionality
 
 Installation
 
-Ensure you have Python 3.7 or later installed on your system.
+Ensure you have installed Python 3.7 or later on your system.
 Clone this repository or download the source code.
 
 ```bash
   git clone https://github.com/Akeeal/SlideShowExtractor.git
+```
+
+Change directory
+
+```bash
+  cd SlideShowExtractor
 ```
 Install the required dependencies:
 
@@ -26,7 +32,9 @@ Install the required dependencies:
 
 Run the application:
 
-python slide_extractor.py
+```bash
+  python slide_extractor.py
+```
 
 Usage
 
