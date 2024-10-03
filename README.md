@@ -115,6 +115,12 @@ For very large video files, consider using Fast Mode and increasing the Threshol
 - Optimise code for speed
 - Add more integrations? Any ideas
 
+  If you like this please consider buying me a coffee
+  
+  [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/akeeal)
+
+
+
 ---
 Contributing
 Contributions to improve Slide Extractor are welcome. Please feel free to submit pull requests or open issues on the GitHub repository.
