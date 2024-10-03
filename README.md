@@ -106,8 +106,15 @@ If the application crashes or freezes, try processing the video in smaller segme
 Ensure you have sufficient free disk space for the output files, especially when extracting long videos as images.
 For very large video files, consider using Fast Mode and increasing the Threshold to reduce processing time and memory usage.
 
+## Roadmap
+
+- Create a release version for Windows and Mac
+- Improve on user interface
+- Optimise code for speed
+- Add more integrations? Any ideas
+
 ---
 Contributing
 Contributions to improve Slide Extractor are welcome. Please feel free to submit pull requests or open issues on the GitHub repository.
 License
-MIT License
+Apache License
