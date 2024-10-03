@@ -90,7 +90,9 @@ Fast Mode: Enabled
 ### If you're getting too many duplicate or similar slides:
 
 ---
+
 *Increase the Threshold value*
+
 *Increase the Similar Slides Removal value*
 
 For long videos, use Fast Mode to reduce processing time. Disable it if you notice missing slides.
