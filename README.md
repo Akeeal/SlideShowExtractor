@@ -4,6 +4,9 @@
 
 Slide Extractor the GUI version is a Python application that extracts slides from video files. It uses computer vision techniques to identify unique slides and can output them as PDF, PNG, or JPEG files. I couldn't find one GUI. So I created it. I use it regularly I hope it helps other students out there!
 
+If you like this please consider buying me a coffee support me in my future projects
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/akeeal)
+
 ### Features
 ---
 
@@ -115,14 +118,11 @@ For very large video files, consider using Fast Mode and increasing the Threshol
 - Optimise code for speed
 - Add more integrations? Any ideas
 
-  If you like this please consider buying me a coffee
-  
-  [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/akeeal)
-
-
-
 ---
 Contributing
 Contributions to improve Slide Extractor are welcome. Please feel free to submit pull requests or open issues on the GitHub repository.
 License
 Apache License
+
+If you like this please consider buying me a coffee
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/akeeal)
