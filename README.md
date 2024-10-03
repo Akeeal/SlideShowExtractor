@@ -1,5 +1,7 @@
 # SlideShowExtractor
 
+![App Screenshot](https://via.placeholder.com/468x300?text=App+Screenshot+Here)
+
 Slide Extractor is a Python application that extracts slides from video files. It uses computer vision techniques to identify unique slides and can output them as PDF, PNG, or JPEG files.
 Features
 
