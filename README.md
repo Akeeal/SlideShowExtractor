@@ -79,9 +79,10 @@ Recommendations
 ---
 
 ### Start with the default settings and adjust as needed:
+## These settings usually work for most videos.
 
-Threshold: 2.0
-Similar Slides Removal: 0.90
+Threshold: 5.0
+Similar Slides Removal: 1.00
 Fast Mode: Enabled
 
 ### If you're missing slides:
