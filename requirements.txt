@@ -1,7 +1,8 @@
 PyQt5 
 opencv-python 
 numpy 
-fpdf 
+fpdf
+fpdf2
 scikit-image 
 imagehash 
 Pillow
