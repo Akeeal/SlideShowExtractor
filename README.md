@@ -35,7 +35,7 @@ Clone this repository or download the source code.
 
 ### Install the required dependencies:
 ```bash
-  pip install PyQt5 opencv-python numpy fpdf scikit-image imagehash Pillow
+  pip install PyQt5 opencv-python numpy fpdf fpdf2 scikit-image imagehash Pillow
 ```
 OR
 ```bash
