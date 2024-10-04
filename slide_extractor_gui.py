@@ -14,7 +14,7 @@
 
 import sys
 import os
-from PyQt5.QtWidgets import (QApplication, QWidget, QLabel, QVBoxLayout, QPushButton, 
+from PyQt5.QtWidgets import (QApplication, QMessageBox, QWidget, QLabel, QVBoxLayout, QPushButton, 
                              QSlider, QHBoxLayout, QProgressBar, QCheckBox, QFileDialog)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QMimeData
 from PyQt5.QtGui import QColor, QPalette, QDragEnterEvent, QDropEvent
@@ -26,6 +26,32 @@ import imagehash
 from PIL import Image
 import multiprocessing
 import subprocess
+import fcntl
+import gc
+
+if sys.platform.startswith('win'):
+    # On Windows, we need to use a different start method??
+    multiprocessing.freeze_support()
+
+class SingleInstance:
+    def __init__(self):
+        self.lockfile = os.path.normpath(os.path.join(os.path.expanduser("~"), f'.{os.path.basename(sys.argv[0])}.lock'))
+        self.lock_file_pointer = None
+
+    def try_lock(self):
+        try:
+            self.lock_file_pointer = open(self.lockfile, 'w')
+            fcntl.lockf(self.lock_file_pointer, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except IOError:
+            return False
+
+    def unlock(self):
+        if self.lock_file_pointer is not None:
+            fcntl.lockf(self.lock_file_pointer, fcntl.LOCK_UN)
+            self.lock_file_pointer.close()
+            os.unlink(self.lockfile)
+
 
 # Function to compute the difference hash of an image
 def dhash(image, hash_size=8):
@@ -42,7 +68,6 @@ def process_frame(args):
         return frame, dhash(frame)
     return None, None
 
-# Function to compare two frames and return a similarity score
 def compare_frames(frame1, frame2):
     gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
     gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
@@ -72,71 +97,81 @@ class ExtractorThread(QThread):
         self.format = format
         self.similarity_threshold = similarity_threshold
         self.is_running = True
+        self.cap = None
+        self.total_frames = 0
+        self.frame_count = 0
+        self.image_list = []
+        self.image_hashes = set()
+        self.prev_frame = None
+        self.frame_skip = 1 if not self.fast_mode else 10
+        self.batch_size = 100
 
     def run(self):
-        # Main extraction logic
-        cap = cv2.VideoCapture(self.video_path)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        image_list = []
-        image_hashes = set()
+        self.cap = cv2.VideoCapture(self.video_path)
+        self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-        if not cap.isOpened():
+        if not self.cap.isOpened():
             self.finished.emit("Error opening video file")
             return
 
-        ret, frame = cap.read()
+        ret, self.prev_frame = self.cap.read()
         if not ret:
             self.finished.emit("Error reading the first frame")
             return
 
-        prev_frame = frame
-        image_list.append(frame)
-        image_hashes.add(dhash(frame))
+        self.image_list.append(self.prev_frame)
+        self.image_hashes.add(dhash(self.prev_frame))
 
-        frame_count = 0
-        frame_skip = 1 if not self.fast_mode else 10
-        batch_size = 100  # Process frames in batches
+        if getattr(sys, 'frozen', False):
+            # We are running in a bundle
+            with multiprocessing.get_context('spawn').Pool() as pool:
+                self.process_frames(pool)
+        else:
+            # We are running in a normal Python environment
+            with multiprocessing.Pool() as pool:
+                self.process_frames(pool)
 
-        with multiprocessing.Pool() as pool:
-            while cap.isOpened() and self.is_running:
-                frames = []
-                for _ in range(batch_size):
-                    for _ in range(frame_skip):
-                        ret = cap.grab()
-                        if not ret:
-                            break
-                    ret, frame = cap.retrieve()
-                    if ret:
-                        frames.append((frame, prev_frame, self.threshold))
-                        prev_frame = frame
-                        frame_count += frame_skip
-                    else:
-                        break
-
-                if not frames:
-                    break
-
-                results = pool.map(process_frame, frames)
-                for frame, frame_hash in results:
-                    if frame is not None and frame_hash not in image_hashes:
-                        image_list.append(frame)
-                        image_hashes.add(frame_hash)
-
-                self.progress.emit(int(frame_count / total_frames * 100))
+        self.cap.release()
 
         if self.is_running:
             # Apply additional filtering to reduce similar slides
-            filtered_image_list = self.filter_similar_slides(image_list, self.similarity_threshold)
+            filtered_image_list = self.filter_similar_slides(self.image_list, self.similarity_threshold)
             
             if self.format == 'pdf':
                 self.save_as_pdf(filtered_image_list)
             elif self.format in ['png', 'jpeg']:
                 self.save_as_images(filtered_image_list, self.format)
 
-        cap.release()
         cv2.destroyAllWindows()
         self.finished.emit(f"Slides extracted to: {self.output_path}" if self.is_running else "Extraction stopped")
-    
+
+    def process_frames(self, pool):
+        while self.cap.isOpened() and self.is_running:
+            frames = []
+            for _ in range(self.batch_size):
+                for _ in range(self.frame_skip):
+                    ret = self.cap.grab()
+                    if not ret:
+                        break
+                ret, frame = self.cap.retrieve()
+                if ret:
+                    frames.append((frame, self.prev_frame, self.threshold))
+                    self.prev_frame = frame
+                    self.frame_count += self.frame_skip
+                else:
+                    break
+
+            if not frames:
+                break
+
+            results = pool.map(process_frame, frames)
+            for frame, frame_hash in results:
+                if frame is not None and frame_hash not in self.image_hashes:
+                    self.image_list.append(frame)
+                    self.image_hashes.add(frame_hash)
+
+            self.progress.emit(int(self.frame_count / self.total_frames * 100))
+
     def filter_similar_slides(self, image_list, similarity_threshold=0.95):
     # Filter out similar slides based on similarity threshold
 
@@ -229,6 +264,7 @@ class SlideExtractorGUI(QWidget):
     def __init__(self):
         super().__init__()
         self.initUI()
+        self.extraction_in_progress = False
 
     def initUI(self):
         # Initialize the user interface
@@ -275,12 +311,12 @@ class SlideExtractorGUI(QWidget):
         
         # slider_layout = QHBoxLayout()
         # Threshold slider
-        self.slider_label = QLabel('Threshold: 2.0')
+        self.slider_label = QLabel('Threshold: 5.0')
         self.slider_label.setAlignment(Qt.AlignCenter)
         self.slider = QSlider(Qt.Horizontal)
         self.slider.setMinimum(0)
         self.slider.setMaximum(100)
-        self.slider.setValue(20)  # 2.0 in float
+        self.slider.setValue(50)  # 2.0 in float
         self.slider.setTickPosition(QSlider.TicksBelow)
         self.slider.setTickInterval(10)  # 1.0 in float
         self.slider.valueChanged.connect(self.update_slider_label)
@@ -291,12 +327,12 @@ class SlideExtractorGUI(QWidget):
         layout.addLayout(slider_layout)
 
         # Similar slides removal slider
-        self.similarity_slider_label = QLabel('Similar Slides Removal: 0.90')
+        self.similarity_slider_label = QLabel('Similar Slides Removal: 1.00')
         self.similarity_slider_label.setAlignment(Qt.AlignCenter)
         self.similarity_slider = QSlider(Qt.Horizontal)
         self.similarity_slider.setMinimum(0)
         self.similarity_slider.setMaximum(200)  # 0.8 to 1.0 in steps of 0.001
-        self.similarity_slider.setValue(100)  # 0.90 in float
+        self.similarity_slider.setValue(200)  # 0.90 in float
         self.similarity_slider.setTickPosition(QSlider.TicksBelow)
         self.similarity_slider.setTickInterval(20)  # 0.02 in float
         self.similarity_slider.valueChanged.connect(self.update_similarity_slider_label)
@@ -468,10 +504,52 @@ class SlideExtractorGUI(QWidget):
             filename = f"{name}_{counter}{ext}"
             counter += 1
         return os.path.join(directory, filename)
+    def closeEvent(self, event):
+        if self.extraction_in_progress:
+            reply = QMessageBox.question(self, 'Window Close', 'Extraction is in progress. Are you sure you want to close?',
+                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if reply == QMessageBox.Yes:
+                self.stop_extraction()
+                event.accept()
+            else:
+                event.ignore()
+        else:
+            event.accept()
+
+    def stop_extraction(self):
+        if self.extractor_thread and self.extractor_thread.isRunning():
+            self.extractor_thread.stop()
+            self.extractor_thread.wait()  # Wait for the thread to finish
+        self.extraction_in_progress = False
+
+def cleanup():
+    for p in multiprocessing.active_children():
+        p.terminate()
+    # Force garbage collection to help clean up resources
+    gc.collect()
 
 if __name__ == '__main__':
+    multiprocessing.freeze_support()
     app = QApplication(sys.argv)
+    single_instance = SingleInstance()
+
+    if not single_instance.try_lock():
+        QMessageBox.warning(None, "Application Already Running",
+                            "An instance of Slide Extractor is already running.")
+        sys.exit(1)
+
     ex = SlideExtractorGUI()
     ex.show()
-    sys.exit(app.exec_())
+
+    try:
+        exit_code = app.exec_()
+    finally:
+        single_instance.unlock()
+        cleanup()
+
+    sys.exit(exit_code)
+
+
+
+
 
