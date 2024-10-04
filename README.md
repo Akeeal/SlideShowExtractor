@@ -115,7 +115,7 @@ For very large video files, consider using Fast Mode and increasing the Threshol
 
 ## Roadmap
 
-- Create a release version for Windows and _Mac_
+- Create a release version for Windows and ~~Mac~~
 - Improve on user interface
 - Optimise code for speed
 - Add more integrations? Any ideas
