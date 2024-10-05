@@ -15,7 +15,7 @@ from PIL import Image
 import multiprocessing
 import subprocess
 import gc
-
+from utils import process_frame  # Import the process_frame function from utils.py
 
 if sys.platform.startswith('win'):
     # On Windows, we need to use a different start method??
@@ -534,6 +534,7 @@ def cleanup():
 
 if __name__ == '__main__':
     multiprocessing.freeze_support()
+    multiprocessing.set_start_method('spawn')  # Add this line
     app = QApplication(sys.argv)
     single_instance = SingleInstance()
 
