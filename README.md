@@ -2,7 +2,7 @@
 
 <img src="https://github.com/Akeeal/SlideShowExtractor/blob/main/Screenshot%202024-10-03%20at%2015.52.32.png" width=40% height=40%>
 
-Slide Extractor the GUI version is a Python application that extracts slides from video files. It uses computer vision techniques to identify unique slides and can output them as PDF, PNG, or JPEG files. I couldn't find one GUI. So I created it. I use it regularly I hope it helps other students out there!
+Slide Extractor the GUI version is a Python application that extracts slides from video files. It uses computer vision techniques to identify unique slides and can output them as PDF, PNG, or JPEG files. I couldn't find one GUI. So I created it. I've created an executable file for Mac just put into Applications folder, and Windows put anywhere and create a shortcut (Sorry for the big file size still working on how to make it smaller. I use it regularly I hope it helps other students out there!
 
 If you like this please consider buying me a coffee support me in my future projects
 
@@ -42,11 +42,15 @@ OR
   pip install -r requirements.txt
 ```
 
-### Run the application:
+### Run the application on Mac:
 ```bash
   python slide_extractor_gui.py
 ```
 
+### Run the application on Windows:
+```bash
+  python slide_extractor_gui_win.py
+```
 ### Usage
 ---
 
@@ -119,6 +123,7 @@ For very large video files, consider using Fast Mode and increasing the Threshol
 - Improve on user interface
 - Optimise code for speed
 - Create an icon
+- create optimized code for smaller executable file
 - Add more integrations? Any ideas
 
 ---
