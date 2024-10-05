@@ -1,6 +1,8 @@
 # Slide Show Extractor GUI version
 
-<img src="https://github.com/Akeeal/SlideShowExtractor/blob/main/Screenshot%202024-10-03%20at%2015.52.32.png" width=40% height=40%>
+<img src="https://github.com/Akeeal/SlideShowExtractor/blob/main/Screenshot%Mac.png" width=40% height=40%>
+<img src="https://github.com/Akeeal/SlideShowExtractor/blob/main/Screenshot%Win.png" width=40% height=40%>
+
 
 Slide Extractor the GUI version is a Python application that extracts slides from video files. It uses computer vision techniques to identify unique slides and can output them as PDF, PNG, or JPEG files. I couldn't find one GUI. So I created it. I've created an executable file for Mac just put into Applications folder, and Windows put anywhere and create a shortcut (Sorry for the big file size still working on how to make it smaller. I use it regularly I hope it helps other students out there!
 
