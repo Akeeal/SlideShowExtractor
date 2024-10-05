@@ -1,7 +1,7 @@
 # Slide Show Extractor GUI version
 
 <p align="middle">
-<img src="https://github.com/Akeeal/SlideShowExtractor/blob/main/ScreenshotMac.png" width=40% height=40%>
+<img src="https://github.com/Akeeal/SlideShowExtractor/blob/main/ScreenshotMac.png" width=50% height=50%>
 <img src="https://github.com/Akeeal/SlideShowExtractor/blob/main/ScreenshotWin.png" width=40% height=40%>
 </p>
 
