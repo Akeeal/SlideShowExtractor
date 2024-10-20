@@ -12,12 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from PyQt5.QtCore import QThread, pyqtSignal
+import tempfile
+import time
+import os
 import cv2
 import numpy as np
+from PyQt5.QtCore import QThread, pyqtSignal
 from fpdf import FPDF
 from PIL import Image
-import os
+from skimage.metrics import structural_similarity as ssim
+import imagehash
+
 
 from .image_processing import dhash, compare_frames, ssim, imagehash
 
@@ -35,13 +40,13 @@ class ExtractorThread(QThread):
         self.similarity_measures = similarity_measures
         self.fixed_interval = fixed_interval
         self.remove_fading_text = remove_fading_text
-        self.is_running = True
         self.cap = None
         self.total_frames = 0
         self.frame_count = 0
         self.image_list = []
         self.image_hashes = set()
         self.fps = 0
+        self.is_running = True
 
     def run(self):
         self.cap = cv2.VideoCapture(self.video_path)
@@ -52,19 +57,27 @@ class ExtractorThread(QThread):
             self.finished.emit("Error opening video file")
             return
 
-        if self.fixed_interval:
-            self.extract_fixed_interval()
-        else:
-            self.extract_adaptive()
+        try:
+            if self.fixed_interval:
+                self.extract_fixed_interval()
+            else:
+                self.extract_adaptive()
 
-        self.cap.release()
+            self.cap.release()
 
-        if self.is_running:
-            filtered_image_list = self.filter_similar_slides(self.image_list, self.similarity_threshold)
-            
-            if self.format == 'pdf':
-                self.save_as_pdf(filtered_image_list)
-            elif self.format in ['png', 'jpeg']:
+            if self.is_running:
+                self.finished.emit("Extraction completed successfully")
+                filtered_image_list = self.filter_similar_slides(self.image_list, self.similarity_threshold)
+            else:
+                self.finished.emit("Extraction stopped by user")
+        except Exception as e:
+            self.finished.emit(f"Error during extraction: {str(e)}")
+        finally:
+            self.cleanup()
+
+        if self.format == 'pdf':
+            self.save_as_pdf(filtered_image_list)
+        elif self.format in ['png', 'jpeg']:
                 self.save_as_images(filtered_image_list, self.format)
 
         cv2.destroyAllWindows()
@@ -187,60 +200,165 @@ class ExtractorThread(QThread):
 
     def stop(self):
         self.is_running = False
+        
+    def cleanup(self):
+        # Release any resources, close files, etc.
+        pass  # Implement any necessary cleanup logic
     
     def save_as_pdf(self, image_list):
-        # Create a temporary directory
-        temp_dir = os.path.join(os.path.dirname(self.output_path), 'temp_slides')
-        os.makedirs(temp_dir, exist_ok=True)
+        pdf = None
+        temp_dir = None
+        retry_count = 0
+        max_retries = 3
+        
         try:
+            temp_dir = tempfile.mkdtemp()
             pdf = FPDF(orientation='L')
+            
             for idx, image in enumerate(image_list):
-                temp_path = os.path.join(temp_dir, f'temp{idx}.png')
-                cv2.imwrite(temp_path, image)
+                temp_image_path = os.path.join(temp_dir, f'temp_image_{idx}.png')
+                cv2.imwrite(temp_image_path, image)
                 pdf.add_page()
-                pdf.image(temp_path, 0, 0, 297, 210)
-            pdf.output(self.output_path, "F")
+                pdf.image(temp_image_path, 0, 0, 297, 210)
+
+            while retry_count < max_retries:
+                try:
+                    pdf.output(self.output_path, "F")
+                    print(f"PDF saved to: {self.output_path}")  # Debug print
+                    break
+                except PermissionError:
+                    retry_count += 1
+                    if retry_count == max_retries:
+                        raise
+                    time.sleep(1)  # Wait for 1 second before retrying
+        
         except Exception as e:
-            print(f"Error saving PDF: {str(e)}")
-            self.finished.emit(f"Error saving PDF: {str(e)}")
+            raise Exception(f"Error saving PDF: {str(e)}")
+        
         finally:
+            if pdf:
+                del pdf  # Ensure the PDF object is deleted
+            
             # Clean up temporary files
-            for file in os.listdir(temp_dir):
-                os.remove(os.path.join(temp_dir, file))
-            os.rmdir(temp_dir)
+            if temp_dir and os.path.exists(temp_dir):
+                for file in os.listdir(temp_dir):
+                    os.remove(os.path.join(temp_dir, file))
+                os.rmdir(temp_dir)
 
     def save_as_images(self, image_list, format):
-        # Ensure the output directory exists
-        os.makedirs(self.output_path, exist_ok=True)
-
         try:
+            os.makedirs(self.output_path, exist_ok=True)
             for idx, image in enumerate(image_list):
                 filename = f'slide_{idx:03d}.{format}'
                 output_file = os.path.join(self.output_path, filename)
                 
-                # For PNG format
                 if format.lower() == 'png':
                     cv2.imwrite(output_file, image)
-                
-                # For JPEG format
-                elif format.lower() == 'jpeg' or format.lower() == 'jpg':
-                    # Convert from BGR to RGB color space
+                elif format.lower() in ['jpeg', 'jpg']:
                     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                    # Use PIL for JPEG saving to ensure better quality control
-                    pil_image = Image.fromarray(image_rgb)
-                    pil_image.save(output_file, format='JPEG', quality=95)
-                
+                    Image.fromarray(image_rgb).save(output_file, format='JPEG', quality=95)
                 else:
                     raise ValueError(f"Unsupported image format: {format}")
-
-            # Emit progress updates
-            progress = int((idx + 1) / len(image_list) * 100)
-            self.progress.emit(progress)
-
+            print(f"Images saved to: {self.output_path}")  # Debug print
         except Exception as e:
-            error_message = f"Error saving images: {str(e)}"
-            print(error_message)
-            self.finished.emit(error_message)
-        else:
-            success_message = f"Slides extracted to: {self.output_path}"
-            self.finished.emit(success_message)
+            raise Exception(f"Error saving images: {str(e)}")
+
+    def run(self):
+        try:
+            cap = cv2.VideoCapture(self.video_path)
+            if not cap.isOpened():
+                raise Exception("Error opening video file")
+
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = int(cap.get(cv2.CAP_PROP_FPS))
+            
+            frame_interval = 1
+            if self.fast_mode:
+                frame_interval = max(1, fps // 2)  # Process 2 frames per second in fast mode
+            elif self.fixed_interval:
+                frame_interval = int(self.fixed_interval * fps)
+
+            prev_frame = None
+            prev_hash = None
+            frame_count = 0
+
+            while self.is_running:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                frame_count += 1
+                if frame_count % frame_interval != 0:
+                    continue
+
+                if prev_frame is None:
+                    self.image_list.append(frame)
+                    prev_frame = frame
+                    prev_hash = self.compute_image_hash(frame)
+                else:
+                    if self.is_new_slide(frame, prev_frame, prev_hash):
+                        if not self.remove_fading_text or not self.is_fading_text(frame, prev_frame):
+                            self.image_list.append(frame)
+                            prev_frame = frame
+                            prev_hash = self.compute_image_hash(frame)
+
+                progress = int((frame_count / total_frames) * 100)
+                self.progress.emit(progress)
+
+            cap.release()
+
+            if self.is_running:
+                if self.format == 'pdf':
+                    self.save_as_pdf(self.image_list)
+                else:
+                    self.save_as_images(self.image_list, self.format)
+                self.finished.emit("Extraction completed successfully")
+            else:
+                self.finished.emit("Extraction stopped by user")
+        except Exception as e:
+            self.finished.emit(f"Error during extraction: {str(e)}")
+        finally:
+            self.cleanup()
+
+    def is_new_slide(self, current_frame, prev_frame, prev_hash):
+        current_hash = self.compute_image_hash(current_frame)
+        hash_diff = current_hash - prev_hash
+
+        if hash_diff >= self.similarity_threshold:
+            return True
+
+        if self.similarity_measures.get('ssim', False):
+            ssim_score = self.compute_ssim(current_frame, prev_frame)
+            if ssim_score < self.similarity_threshold:
+                return True
+
+        if self.similarity_measures.get('hist', False):
+            hist_diff = self.compute_histogram_difference(current_frame, prev_frame)
+            if hist_diff > 1 - self.similarity_threshold:
+                return True
+
+        return False
+
+    def compute_image_hash(self, image):
+        return imagehash.phash(Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)))
+
+    def compute_ssim(self, image1, image2):
+        gray1 = cv2.cvtColor(image1, cv2.COLOR_BGR2GRAY)
+        gray2 = cv2.cvtColor(image2, cv2.COLOR_BGR2GRAY)
+        return ssim(gray1, gray2)
+
+    def compute_histogram_difference(self, image1, image2):
+        hist1 = cv2.calcHist([image1], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
+        hist2 = cv2.calcHist([image2], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
+        return cv2.compareHist(hist1, hist2, cv2.HISTCMP_CORREL)
+
+    def is_fading_text(self, current_frame, prev_frame):
+        diff = cv2.absdiff(current_frame, prev_frame)
+        gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
+        _, thresh = cv2.threshold(gray_diff, 30, 255, cv2.THRESH_BINARY)
+        return np.sum(thresh) / thresh.size < 0.01  # Adjust threshold as needed
+
+    def cleanup(self):
+        # Implement any necessary cleanup logic
+        self.image_list.clear()
+        # Release any other resources if needed
