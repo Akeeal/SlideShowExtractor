@@ -2,15 +2,17 @@
 
 <img src="https://github.com/Akeeal/SlideShowExtractor/blob/main/screenShotWin.png" width=50% height=50%>
 
-Slide Extractor the GUI version is a Python application that extracts slides from video files. It uses computer vision techniques to identify unique slides and can output them as PDF, PNG, or JPEG files. I couldn't find one GUI. So I created it. I use it regularly I hope it helps other students out there!
+Slide Extractor the GUI version is a Python application that extracts slides from video files. It uses computer vision techniques to identify unique slides and can output them as PDF, PNG, or JPEG files. I couldn't find one GUI. So I created it. I use it regularly I hope it helps other students out there! There is a working Windows and MacOS versions if there are any issues let me know otherwise have a lovely day.
 
-If you like this please consider buying me a coffee support me in my future projects
+If you like this please consider buying me a coffee, support me in my future projects
 
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/akeeal)
 
 ### Features
 ---
 
+* NEW - New Algorithms SSIM, Histogram and Perceptual Hash
+  
 - Extract slides from various video formats (MP4, AVI, MOV, MKV)
 - Output slides as PDF, PNG, or JPEG into a folder ( example 'name_png' )
 - Adjustable threshold for slide detection
@@ -42,15 +44,20 @@ OR
   pip install -r requirements.txt
 ```
 
-### Run the application:
+### Run the application in MacOS:
 ```bash
   python slide_extractor_gui.py
+```
+
+### Run the application in Windows:
+```bash
+  python slide_extractor_gui_win.py
 ```
 
 ### Usage
 ---
 
-Launch the application by running slide_extractor_gui.py
+Launch the application
 
 Select a video file:
 
@@ -61,9 +68,9 @@ Drag and drop a video file onto the application window.
 ### Adjust the settings:
 ---
 
-Threshold: Controls the sensitivity of slide detection. Lower values detect more subtle changes.
-Similar Slides Removal: Adjusts how aggressively similar slides are filtered out.
-Fast Mode: Skips frames for quicker processing (enabled by default).
+~~Threshold: Controls the sensitivity of slide detection. Lower values detect more subtle changes.~~
+~~Similar Slides Removal: Adjusts how aggressively similar slides are filtered out.~~
+Fast Mode: Skips frames for quicker processing (enabled by default).~~
 
 ### Choose the output format:
 ---
@@ -88,9 +95,9 @@ Fast Mode: Enabled
 ### If you're missing slides:
 ---
 
-*Decrease the Threshold value*
+~~*Decrease the Threshold value*~~
 
-*Decrease the Similar Slides Removal value*
+*Decrease the Remove Similar Slides value*
 
 *Disable Fast Mode*
 
@@ -98,9 +105,9 @@ Fast Mode: Enabled
 
 ---
 
-*Increase the Threshold value*
+~~*Increase the Threshold value*~~
 
-*Increase the Similar Slides Removal value*
+*Increase the Remove Similar Slides value value*
 
 For long videos, use Fast Mode to reduce processing time. Disable it if you notice missing slides.
 The PDF output is great for an overview, while PNG or JPEG outputs are useful if you need to edit individual slides.
@@ -115,9 +122,9 @@ For very large video files, consider using Fast Mode and increasing the Threshol
 
 ## Roadmap
 
-- Create a release version for Windows ~~and Mac~~
-- Improve on user interface
-- Optimise code for speed
+- ~~Create a release version for Windows and Mac~~
+- ~~Improve on user interface~~
+- ~~Optimise code for speed~~
 - Add more integrations? Any ideas
 
 ---
