@@ -1,17 +1,3 @@
-# Copyright 2024 Akeeal Mohammed
-
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import sys
 import os
 from pathlib import Path
@@ -29,7 +15,7 @@ from PIL import Image
 import multiprocessing
 import subprocess
 import gc
-from utils import process_frame  # Import the process_frame function from utils.py
+
 
 if sys.platform.startswith('win'):
     # On Windows, we need to use a different start method??
@@ -548,7 +534,6 @@ def cleanup():
 
 if __name__ == '__main__':
     multiprocessing.freeze_support()
-    multiprocessing.set_start_method('spawn')  # Add this line
     app = QApplication(sys.argv)
     single_instance = SingleInstance()
 
