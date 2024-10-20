@@ -2,403 +2,295 @@ import sys
 import os
 from pathlib import Path
 import tempfile
-from PyQt5.QtWidgets import (QApplication, QMessageBox, QWidget, QLabel, QVBoxLayout, QPushButton, 
-                             QSlider, QHBoxLayout, QProgressBar, QCheckBox, QFileDialog)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QMimeData
-from PyQt5.QtGui import QColor, QPalette, QDragEnterEvent, QDropEvent
-import cv2
-import numpy as np
-from fpdf import FPDF
-from skimage.metrics import structural_similarity as ssim
-import imagehash
-from PIL import Image
 import multiprocessing
 import subprocess
 import gc
 
+from PyQt5.QtWidgets import (QApplication, QMessageBox, QWidget, QLabel, QVBoxLayout, QPushButton, 
+                             QSlider, QHBoxLayout, QProgressBar, QCheckBox, QFileDialog, QLineEdit,
+                             QSpacerItem, QSizePolicy, QFrame, QToolTip)
+from PyQt5.QtCore import Qt, QMimeData, QTimer, QThread, pyqtSignal
+from PyQt5.QtGui import QColor, QPalette, QDragEnterEvent, QDropEvent, QCursor
 
-if sys.platform.startswith('win'):
-    # On Windows, we need to use a different start method??
-    multiprocessing.freeze_support()
+# Import custom modules
+from gui.widgets import ClickableLabel
+from core.extractor import ExtractorThread
+from utils.single_instance import SingleInstance
+from utils.file_operations import get_unique_filename
 
-class SingleInstance:
-    def __init__(self):
-        self.mutex_file = os.path.join(tempfile.gettempdir(), 'slide_extractor.lock')
-        self.mutex = None
+def setup_global_style():
+    app = QApplication.instance()
+    app.setStyleSheet("""
+        QToolTip {
+            background-color: #2980b9;
+            color: black;
+            border: 2px solid #1c4966;
+            padding: 5px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+    """)
 
-    def try_lock(self):
-        try:
-            if sys.platform == 'win32':
-                import msvcrt
-                self.mutex = open(self.mutex_file, 'w')
-                msvcrt.locking(self.mutex.fileno(), msvcrt.LK_NBLCK, 1)
-            else:
-                import fcntl
-                self.mutex = open(self.mutex_file, 'w')
-                fcntl.lockf(self.mutex, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            return True
-        except (IOError, OSError):
-            return False
+class BorderedFrame(QFrame):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setFrameShape(QFrame.StyledPanel)
+        self.setFrameShadow(QFrame.Raised)
+        self.setStyleSheet("""
+            BorderedFrame {
+                border: 2px solid #CCCCCC;
+                border-radius: 5px;
+                padding: 1px;
+                margin: 1px;
+                background-color: white;
+            }
+            BorderedFrame QLabel, 
+            BorderedFrame QCheckBox, 
+            BorderedFrame QLineEdit,
+            BorderedFrame QSlider::handle:horizontal {
+                color: black;
+            }
+        """)
 
-    def unlock(self):
-        if self.mutex:
-            if sys.platform == 'win32':
-                import msvcrt
-                msvcrt.locking(self.mutex.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                import fcntl
-                fcntl.lockf(self.mutex, fcntl.LOCK_UN)
-            self.mutex.close()
-            os.unlink(self.mutex_file)
+class HoverButton(QPushButton):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setStyleSheet("""
+            QPushButton {
+                background-color: #6BA5E7;
+                font-size: 14px;
+                color: white;
+                border: 2px;
+                padding: 10px;
+                border-radius: 10px;
+            }
+            QPushButton:hover {
+                background-color: #4A90E2;
+                font-size: 15px;
+            }
+            QPushButton:pressed {
+                background-color: #2980b9;
+            }
+        """)
+        self.setCursor(Qt.PointingHandCursor)
+        self.timer = QTimer(self)
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self.showTooltip)
+        self.setMouseTracking(True)
 
+    def enterEvent(self, event):
+        self.timer.start(2000)
 
-# Function to compute the difference hash of an image
-def dhash(image, hash_size=8):
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    resized = cv2.resize(image, (hash_size + 1, hash_size))
-    diff = resized[:, 1:] > resized[:, :-1]
-    return imagehash.ImageHash(diff)
+    def leaveEvent(self, event):
+        self.timer.stop()
+        QToolTip.hideText()
 
-# Function to process a single frame
-def process_frame(args):
-    frame, prev_frame, threshold = args
-    difference = compare_frames(frame, prev_frame)
-    if difference > threshold:
-        return frame, dhash(frame)
-    return None, None
+    def showTooltip(self):
+        QToolTip.showText(QCursor.pos(), self.toolTip())
 
-def compare_frames(frame1, frame2):
-    gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
-    gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
-    
-    score, diff = ssim(gray1, gray2, full=True)
-    
-    diff = (diff * 255).astype("uint8")
-    thresh = cv2.threshold(diff, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
-    changed_pixels = np.count_nonzero(thresh)
-    total_pixels = thresh.size
-    percentage_changed = (changed_pixels / total_pixels) * 100
-    
-    combined_score = (1 - score) * 100 + percentage_changed
-    return combined_score
-
-# Thread class for extracting slides from a video
-class ExtractorThread(QThread):
-    progress = pyqtSignal(int)
-    finished = pyqtSignal(str)
-
-    def __init__(self, video_path, output_path, threshold, fast_mode, format, similarity_threshold):
-        QThread.__init__(self)
-        self.video_path = video_path
-        self.output_path = output_path
-        self.threshold = threshold
-        self.fast_mode = fast_mode
-        self.format = format
-        self.similarity_threshold = similarity_threshold
-        self.is_running = True
-        self.cap = None
-        self.total_frames = 0
-        self.frame_count = 0
-        self.image_list = []
-        self.image_hashes = set()
-        self.prev_frame = None
-        self.frame_skip = 1 if not self.fast_mode else 10
-        self.batch_size = 100
-
-    def run(self):
-        self.cap = cv2.VideoCapture(self.video_path)
-        self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-        if not self.cap.isOpened():
-            self.finished.emit("Error opening video file")
-            return
-
-        ret, self.prev_frame = self.cap.read()
-        if not ret:
-            self.finished.emit("Error reading the first frame")
-            return
-
-        self.image_list.append(self.prev_frame)
-        self.image_hashes.add(dhash(self.prev_frame))
-
-        if getattr(sys, 'frozen', False):
-            # We are running in a bundle
-            with multiprocessing.get_context('spawn').Pool() as pool:
-                self.process_frames(pool)
-        else:
-            # We are running in a normal Python environment
-            with multiprocessing.Pool() as pool:
-                self.process_frames(pool)
-
-        self.cap.release()
-
-        if self.is_running:
-            # Apply additional filtering to reduce similar slides
-            filtered_image_list = self.filter_similar_slides(self.image_list, self.similarity_threshold)
-            
-            if self.format == 'pdf':
-                self.save_as_pdf(filtered_image_list)
-            elif self.format in ['png', 'jpeg']:
-                self.save_as_images(filtered_image_list, self.format)
-
-        cv2.destroyAllWindows()
-        self.finished.emit(f"Slides extracted to: {self.output_path}" if self.is_running else "Extraction stopped")
-
-    def process_frames(self, pool):
-        while self.cap.isOpened() and self.is_running:
-            frames = []
-            for _ in range(self.batch_size):
-                for _ in range(self.frame_skip):
-                    ret = self.cap.grab()
-                    if not ret:
-                        break
-                ret, frame = self.cap.retrieve()
-                if ret:
-                    frames.append((frame, self.prev_frame, self.threshold))
-                    self.prev_frame = frame
-                    self.frame_count += self.frame_skip
-                else:
-                    break
-
-            if not frames:
-                break
-
-            results = pool.map(process_frame, frames)
-            for frame, frame_hash in results:
-                if frame is not None and frame_hash not in self.image_hashes:
-                    self.image_list.append(frame)
-                    self.image_hashes.add(frame_hash)
-
-            self.progress.emit(int(self.frame_count / self.total_frames * 100))
-
-    def filter_similar_slides(self, image_list, similarity_threshold=0.95):
-    # Filter out similar slides based on similarity threshold
-
-        filtered_images = []
-        for i, current_image in enumerate(image_list):
-            if i == 0:
-                filtered_images.append(current_image)
-                continue
-            
-            prev_image = filtered_images[-1]
-            similarity = self.compute_image_similarity(prev_image, current_image)
-            
-            if similarity < similarity_threshold:
-                filtered_images.append(current_image)
-        
-        return filtered_images
-
-    def compute_image_similarity(self, img1, img2):
-    # Compute similarity between two images
-        # Convert images to grayscale
-        gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
-        gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
-        
-        # Compute SSIM between two images
-        score, _ = ssim(gray1, gray2, full=True)
-        return score
-
-    def stop(self):
-        self.is_running = False
-    
-    def save_as_pdf(self, image_list):
-        # Create a temporary directory
-        temp_dir = os.path.join(os.path.dirname(self.output_path), 'temp_slides')
-        os.makedirs(temp_dir, exist_ok=True)
-        try:
-            pdf = FPDF(orientation='L')
-            for idx, image in enumerate(image_list):
-                temp_path = os.path.join(temp_dir, f'temp{idx}.png')
-                cv2.imwrite(temp_path, image)
-                pdf.add_page()
-                pdf.image(temp_path, 0, 0, 297, 210)
-            pdf.output(self.output_path, "F")
-        except Exception as e:
-            print(f"Error saving PDF: {str(e)}")
-            self.finished.emit(f"Error saving PDF: {str(e)}")
-        finally:
-            # Clean up temporary files
-            for file in os.listdir(temp_dir):
-                os.remove(os.path.join(temp_dir, file))
-            os.rmdir(temp_dir)
-
-    def save_as_images(self, image_list, format):
-        # Ensure the output directory exists
-        os.makedirs(self.output_path, exist_ok=True)
-
-        try:
-            for idx, image in enumerate(image_list):
-                filename = f'slide_{idx:03d}.{format}'
-                output_file = os.path.join(self.output_path, filename)
-                
-                # For PNG format
-                if format.lower() == 'png':
-                    cv2.imwrite(output_file, image)
-                
-                # For JPEG format
-                elif format.lower() == 'jpeg' or format.lower() == 'jpg':
-                    # Convert from BGR to RGB color space
-                    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                    # Use PIL for JPEG saving to ensure better quality control
-                    pil_image = Image.fromarray(image_rgb)
-                    pil_image.save(output_file, format='JPEG', quality=95)
-                
-                else:
-                    raise ValueError(f"Unsupported image format: {format}")
-
-                # Emit progress updates
-                progress = int((idx + 1) / len(image_list) * 100)
-                self.progress.emit(progress)
-
-        except Exception as e:
-            error_message = f"Error saving images: {str(e)}"
-            print(error_message)
-            self.finished.emit(error_message)
-        else:
-            success_message = f"Slides extracted to: {self.output_path}"
-            self.finished.emit(success_message)
-
-# Main GUI class for the Slide Extractor application
 class SlideExtractorGUI(QWidget):
     def __init__(self):
         super().__init__()
         self.initUI()
         self.extraction_in_progress = False
+        self.video_path = None
+        self.output_path = None
+        self.extractor_thread = None
 
     def initUI(self):
-        # Initialize the user interface
         self.setWindowTitle('Slide Extractor - By Akeeal')
-        self.setFixedSize(400, 500)  # Increased height to accommodate new buttons
+        self.setFixedSize(700, 650)
         self.setAcceptDrops(True)
         
-        # Set color palette
         palette = QPalette()
         palette.setColor(QPalette.Window, QColor('#F0F0F0'))
-        palette.setColor(QPalette.WindowText, QColor('#799496'))
+        palette.setColor(QPalette.WindowText, QColor('black'))
         palette.setColor(QPalette.Button, QColor('#4A90E2'))
         palette.setColor(QPalette.ButtonText, QColor('#799496'))
         palette.setColor(QPalette.Highlight, QColor('#00E5E8'))
         self.setPalette(palette)
         
-        layout = QVBoxLayout()
+        main_layout = QHBoxLayout()
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        
+        left_layout = QVBoxLayout()
+        left_layout.addStretch(1)
+        self.file_label = ClickableLabel('Click here \n or \n drag and drop video file')
+        self.file_label.setAlignment(Qt.AlignCenter)
+        self.file_label.setStyleSheet("""
+            QLabel {
+                padding: 20px;
+                border: 5px dashed #CCCCCC;
+                border-radius: 5px;
+                color: #000000;
+                background-color: #F8F8F8;
+                font-size: 16px;
+            }
+            QLabel:hover {
+                background-color: #E8E8E8;
+            }
+        """)
+        self.file_label.setFixedSize(300, 600)
+        self.file_label.clicked.connect(self.select_file)
+        self.file_label.setToolTip("Click here to select a video file or drag and drop a file onto this area")
+        left_layout.addWidget(self.file_label)
+        left_layout.addStretch(1)
+
+        right_layout = QVBoxLayout()
+        right_layout.setSpacing(10)
         
         self.progress_bar = QProgressBar(self)
         self.progress_bar.setStyleSheet("""
             QProgressBar {
-                border: 1px solid #CCCCCC;
+                border: 2px solid #CCCCCC;
                 border-radius: 5px;
                 text-align: center;
                 background-color: #FFFFFF;
+                color: black;
             }
             QProgressBar::chunk {
                 background-color: #4A90E2;
                 border-radius: 5px;
             }
         """)
-        self.progress_bar.setFormat("%p%")  # Show percentage in the progress bar
-        layout.addWidget(self.progress_bar)
+        self.progress_bar.setFixedHeight(20)
+        self.progress_bar.setFormat("%p%")
+        right_layout.addWidget(self.progress_bar)
         
-        self.file_label = QLabel('Drag and drop video file here or click "Select Video File"')
-        self.file_label.setAlignment(Qt.AlignCenter)
-        self.file_label.setStyleSheet("""
-            padding: 10px;
-            border: 2px dashed #CCCCCC;
-            border-radius: 5px;
-            color: #000000;
-        """)
-        layout.addWidget(self.file_label)
-        
-        # slider_layout = QHBoxLayout()
-        # Threshold slider
-        self.slider_label = QLabel('Threshold: 5.0')
-        self.slider_label.setAlignment(Qt.AlignCenter)
-        self.slider = QSlider(Qt.Horizontal)
-        self.slider.setMinimum(0)
-        self.slider.setMaximum(100)
-        self.slider.setValue(50)  # 2.0 in float
-        self.slider.setTickPosition(QSlider.TicksBelow)
-        self.slider.setTickInterval(10)  # 1.0 in float
-        self.slider.valueChanged.connect(self.update_slider_label)
-        
-        slider_layout = QVBoxLayout()
-        slider_layout.addWidget(self.slider_label)
-        slider_layout.addWidget(self.slider)
-        layout.addLayout(slider_layout)
-
-        # Similar slides removal slider
-        self.similarity_slider_label = QLabel('Similar Slides Removal: 1.00')
+        similarity_frame = BorderedFrame()
+        similarity_layout = QVBoxLayout(similarity_frame)
+        self.similarity_slider_label = QLabel('Removes Similar Slides By: 98% Threshold')
+        self.similarity_slider_label.setToolTip('Adjust the similarity threshold for slide removal.\n'
+                                                'Lower values will REMOVE more slides.\n'
+                                                'Higher values will ADD more slides')
         self.similarity_slider_label.setAlignment(Qt.AlignCenter)
         self.similarity_slider = QSlider(Qt.Horizontal)
-        self.similarity_slider.setMinimum(0)
-        self.similarity_slider.setMaximum(200)  # 0.8 to 1.0 in steps of 0.001
-        self.similarity_slider.setValue(200)  # 0.90 in float
+        self.similarity_slider.setMinimum(80)
+        self.similarity_slider.setMaximum(100)
+        self.similarity_slider.setValue(98)
         self.similarity_slider.setTickPosition(QSlider.TicksBelow)
-        self.similarity_slider.setTickInterval(20)  # 0.02 in float
+        self.similarity_slider.setTickInterval(1)
         self.similarity_slider.valueChanged.connect(self.update_similarity_slider_label)
-        
-        similarity_slider_layout = QVBoxLayout()
-        similarity_slider_layout.addWidget(self.similarity_slider_label)
-        similarity_slider_layout.addWidget(self.similarity_slider)
-        layout.addLayout(similarity_slider_layout)
+        similarity_layout.addWidget(self.similarity_slider_label)
+        similarity_layout.addWidget(self.similarity_slider)
+        right_layout.addWidget(similarity_frame)
 
+        interval_frame = BorderedFrame()
+        interval_frame.setObjectName("FixedIntervalFrame")
+        interval_frame.setStyleSheet("""
+            #FixedIntervalFrame {
+                background-color: white;
+                border: 2px solid #CCCCCC;
+                border-radius: 5px;
+                text-align: center;
+            }
+            #FixedIntervalFrame QCheckBox {
+                background-color: transparent;
+                color: black;                     
+            }
+            #FixedIntervalFrame QLineEdit {
+                background-color: white;
+                color: black;
+                border: 2px solid #CCCCCC;
+                border-radius: 5px;
+                text-align: center;
+            }
+        """)
+        interval_layout = QHBoxLayout(interval_frame)
+        self.fixed_interval_checkbox = QCheckBox('Extract at Fixed Interval')
+        self.fixed_interval_checkbox.setChecked(True)
+        self.fixed_interval_input = QLineEdit()
+        self.fixed_interval_input.setPlaceholderText('Interval in seconds')
+        self.fixed_interval_input.setText('3')
+        self.fixed_interval_input.setEnabled(True)
+        self.fixed_interval_input.setToolTip('Enter the interval in seconds at which to extract slides.')
+        self.fixed_interval_checkbox.stateChanged.connect(self.toggle_fixed_interval)
+        interval_layout.addWidget(self.fixed_interval_checkbox)
+        interval_layout.addWidget(self.fixed_interval_input)
+        right_layout.addWidget(interval_frame)
 
-        # Fast Mode checkbox
+        fading_text_frame = BorderedFrame()
+        fading_text_layout = QVBoxLayout(fading_text_frame)
+        self.remove_fading_text_checkbox = QCheckBox('Remove Slides with Fading Text')
+        self.remove_fading_text_checkbox.setChecked(True)
+        self.remove_fading_text_checkbox.setToolTip('EXPERIMENTAL - Removes slides with fading text.')
+        fading_text_layout.addWidget(self.remove_fading_text_checkbox)
+        right_layout.addWidget(fading_text_frame)
+
+        similarity_measures_frame = BorderedFrame()
+        similarity_measures_layout = QHBoxLayout(similarity_measures_frame)
+        self.ssim_checkbox = QCheckBox('SSIM')
+        self.ssim_checkbox.setChecked(True)
+        self.ssim_checkbox.setToolTip('EXPERIMENTAL - Structural Similarity Index')
+        self.hist_checkbox = QCheckBox('Histogram')
+        self.hist_checkbox.setChecked(True)
+        self.hist_checkbox.setToolTip('EXPERIMENTAL - Histogram comparison')
+        self.phash_checkbox = QCheckBox('Perceptual Hash')
+        self.phash_checkbox.setChecked(True)
+        self.phash_checkbox.setToolTip('EXPERIMENTAL - Perceptual hashing')
+        similarity_measures_layout.addWidget(self.ssim_checkbox)
+        similarity_measures_layout.addWidget(self.hist_checkbox)
+        similarity_measures_layout.addWidget(self.phash_checkbox)
+        right_layout.addWidget(similarity_measures_frame)
+
+        fast_mode_frame = BorderedFrame()
+        fast_mode_layout = QVBoxLayout(fast_mode_frame)
         self.fast_mode_checkbox = QCheckBox('Fast Mode')
-        self.fast_mode_checkbox.setChecked(True)  # Set Fast Mode on by default
-        layout.addWidget(self.fast_mode_checkbox)
+        self.fast_mode_checkbox.setChecked(True)
+        self.fast_mode_checkbox.setToolTip("Skips frames for faster processing, but may result in lower quality output.")
+        fast_mode_layout.addWidget(self.fast_mode_checkbox)
+        right_layout.addWidget(fast_mode_frame)
 
-        
-        self.select_file_button = QPushButton('Select Video File')
-        self.select_file_button.clicked.connect(self.select_file)
-        layout.addWidget(self.select_file_button)
-        
-        self.extract_pdf_button = QPushButton('Extract to PDF')
+        self.extract_pdf_button = HoverButton('Extract to PDF')
         self.extract_pdf_button.clicked.connect(self.extract_slides_pdf)
         self.extract_pdf_button.setEnabled(False)
-        layout.addWidget(self.extract_pdf_button)
+        self.extract_pdf_button.setToolTip("Extract slides from the video and save as a PDF file")
+        right_layout.addWidget(self.extract_pdf_button)
         
-        self.extract_png_button = QPushButton('Extract to PNG')
+        self.extract_png_button = HoverButton('Extract to PNG')
         self.extract_png_button.clicked.connect(self.extract_slides_png)
         self.extract_png_button.setEnabled(False)
-        layout.addWidget(self.extract_png_button)
-        
-        self.extract_jpeg_button = QPushButton('Extract to JPEG')
+        self.extract_png_button.setToolTip("Extract slides from the video and save as PNG images")
+        right_layout.addWidget(self.extract_png_button)
+
+        self.extract_jpeg_button = HoverButton('Extract to JPEG')
         self.extract_jpeg_button.clicked.connect(self.extract_slides_jpeg)
         self.extract_jpeg_button.setEnabled(False)
-        layout.addWidget(self.extract_jpeg_button)
-        
-        self.stop_button = QPushButton('Stop')
+        self.extract_jpeg_button.setToolTip("Extract slides from the video and save as JPEG images")
+        right_layout.addWidget(self.extract_jpeg_button)
+
+        self.stop_button = HoverButton('Stop')
         self.stop_button.clicked.connect(self.stop_extraction)
         self.stop_button.setEnabled(False)
-        layout.addWidget(self.stop_button)
-        
-        self.open_output_button = QPushButton('Open Output')
-        self.open_output_button.clicked.connect(self.open_output)
-        self.open_output_button.setEnabled(False)
-        layout.addWidget(self.open_output_button)
-        
-        self.quit_button = QPushButton('Quit')
+        self.stop_button.setToolTip("Stop the current extraction process")
+        right_layout.addWidget(self.stop_button)
+
+        self.quit_button = HoverButton('Quit')
         self.quit_button.clicked.connect(QApplication.instance().quit)
-        layout.addWidget(self.quit_button)
-        
-        self.setLayout(layout)
+        self.quit_button.setToolTip("Exit the application")
+        right_layout.addWidget(self.quit_button)
+
+        right_layout.insertStretch(1, 1)
+        right_layout.insertStretch(3, 1)
+        right_layout.insertStretch(5, 1)
+        right_layout.insertStretch(7, 1)
+        right_layout.insertStretch(9, 1)
+        right_layout.addStretch(1)
+
+        main_layout.addLayout(left_layout)
+        main_layout.addLayout(right_layout)
+
+        self.setLayout(main_layout)
         
         self.video_path = None
         self.output_path = None
         self.extractor_thread = None
-
-    def update_slider_label(self, value):
-        # Update the label for the threshold slider
-        float_value = value / 10.0
-        self.slider_label.setText(f'Threshold: {float_value:.1f}')
-
+        print("UI initialization complete")
+        
     def update_similarity_slider_label(self, value):
-        # Update the label for the similarity threshold slider
-        float_value = 0.8 + (value / 1000)
-        self.similarity_slider_label.setText(f'Similar Slides Removal: {float_value:.3f}')
+        self.similarity_slider_label.setText(f'Removes Similar Slides By: {value}% Threshold')
 
     def select_file(self):
-        # Open file dialog to select a video file
         file_dialog = QFileDialog()
         self.video_path, _ = file_dialog.getOpenFileName(self, "Select Video File", "", "Video Files (*.mp4 *.avi *.mov *.mkv)")
         if self.video_path:
@@ -408,12 +300,10 @@ class SlideExtractorGUI(QWidget):
             self.extract_jpeg_button.setEnabled(True)
 
     def dragEnterEvent(self, event: QDragEnterEvent):
-        # Handle drag enter events for file dropping
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
 
     def dropEvent(self, event: QDropEvent):
-        # Handle drop events for file dropping
         files = [u.toLocalFile() for u in event.mimeData().urls()]
         for f in files:
             if f.lower().endswith(('.mp4', '.avi', '.mov', '.mkv')):
@@ -433,86 +323,146 @@ class SlideExtractorGUI(QWidget):
     def extract_slides_jpeg(self):
         self.extract_slides('jpeg')
 
+    def toggle_fixed_interval(self, state):
+        self.fixed_interval_input.setEnabled(state == Qt.Checked)
+        if state == Qt.Checked and not self.fixed_interval_input.text():
+            self.fixed_interval_input.setText('3')
+
+    def stop_extraction(self):
+        try:
+            if self.extractor_thread and self.extractor_thread.isRunning():
+                self.extractor_thread.stop()
+                self.extractor_thread.wait(5000)  # Wait for up to 5 seconds
+                if self.extractor_thread.isRunning():
+                    self.extractor_thread.terminate()  # Force termination if still running
+            self.extraction_in_progress = False
+            self.update_ui_for_extraction_end()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to stop extraction: {str(e)}")
+
     def extract_slides(self, format):
-        # Main method to start the slide extraction process
         if self.video_path:
             base_name = os.path.splitext(os.path.basename(self.video_path))[0]
             if format == 'pdf':
-                self.output_path = self.get_unique_filename(os.path.dirname(self.video_path), f'{base_name}.pdf')
+                self.output_path = get_unique_filename(os.path.dirname(self.video_path), f'{base_name}.pdf')
             else:
-                self.output_path = self.get_unique_filename(os.path.dirname(self.video_path), f'{base_name}_{format}')
+                self.output_path = get_unique_filename(os.path.dirname(self.video_path), f'{base_name}_{format}')
                 os.makedirs(self.output_path, exist_ok=True)
-            
-            threshold = self.slider.value() / 10.0
-            similarity_threshold = 0.8 + (self.similarity_slider.value() / 1000)
+
+            similarity_threshold = self.similarity_slider.value() / 100.0
             fast_mode = self.fast_mode_checkbox.isChecked()
-            self.extractor_thread = ExtractorThread(self.video_path, self.output_path, threshold, fast_mode, format, similarity_threshold)
-
-            self.extractor_thread.progress.connect(self.update_progress)
-            self.extractor_thread.finished.connect(self.extraction_finished)
             
-            self.extractor_thread.start()
-            self.extract_pdf_button.setEnabled(False)
-            self.extract_png_button.setEnabled(False)
-            self.extract_jpeg_button.setEnabled(False)
-            self.stop_button.setEnabled(True)
-            self.slider.setEnabled(False)
-            self.similarity_slider.setEnabled(False)  # Disable similarity slider during extraction
-            self.fast_mode_checkbox.setEnabled(False)
-            self.select_file_button.setEnabled(False)
+            fixed_interval = None
+            if self.fixed_interval_checkbox.isChecked():
+                try:
+                    fixed_interval = float(self.fixed_interval_input.text())
+                except ValueError:
+                    QMessageBox.warning(self, "Invalid Input", "Please enter a valid number for the fixed interval.")
+                    return
 
-    def stop_extraction(self):
-        # Stop the ongoing extraction process
-        if self.extractor_thread and self.extractor_thread.isRunning():
-            self.extractor_thread.stop()
-            self.stop_button.setEnabled(False)
+            remove_fading_text = self.remove_fading_text_checkbox.isChecked()
 
+            similarity_measures = {
+                'ssim': self.ssim_checkbox.isChecked(),
+                'hist': self.hist_checkbox.isChecked(),
+                'phash': self.phash_checkbox.isChecked()
+            }
+
+            try:
+                self.extractor_thread = ExtractorThread(
+                    self.video_path, 
+                    self.output_path, 
+                    fast_mode, 
+                    format, 
+                    similarity_threshold, 
+                    fixed_interval,
+                    remove_fading_text,
+                    similarity_measures
+                )
+
+                self.extractor_thread.progress.connect(self.update_progress)
+                self.extractor_thread.finished.connect(self.extraction_finished)
+                
+                self.extraction_in_progress = True
+                self.extractor_thread.start()
+                
+                self.update_ui_for_extraction_start()
+
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to start extraction: {str(e)}")
+                self.extraction_in_progress = False
+                
     def update_progress(self, value):
-        # Update the progress bar
         self.progress_bar.setValue(value)
 
     def extraction_finished(self, message):
-        # Handle the completion of the extraction process
-        self.file_label.setText(message)
-        self.progress_bar.setValue(100)
+        try:
+            self.extraction_in_progress = False
+            self.update_ui_for_extraction_end()
+            self.file_label.setText(message)
+            self.progress_bar.setValue(100)
+            
+            if "Error" in message:
+                QMessageBox.warning(self, "Extraction Issue", message)
+            else:
+                QMessageBox.information(self, "Extraction Complete", message)
+                # Use QTimer to delay opening the output
+                QTimer.singleShot(1000, self.open_output)  # Increased delay to 1 second
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"An error occurred after extraction: {str(e)}")
+
+    def update_ui_for_extraction_start(self):
+        self.extract_pdf_button.setEnabled(False)
+        self.extract_png_button.setEnabled(False)
+        self.extract_jpeg_button.setEnabled(False)
+        self.stop_button.setEnabled(True)
+        self.similarity_slider.setEnabled(False)
+        self.fast_mode_checkbox.setEnabled(False)
+        self.fixed_interval_checkbox.setEnabled(False)
+        self.fixed_interval_input.setEnabled(False)
+        self.ssim_checkbox.setEnabled(False)
+        self.hist_checkbox.setEnabled(False)
+        self.phash_checkbox.setEnabled(False)
+        self.remove_fading_text_checkbox.setEnabled(False)
+
+    def update_ui_for_extraction_end(self):
         self.stop_button.setEnabled(False)
         self.extract_pdf_button.setEnabled(True)
         self.extract_png_button.setEnabled(True)
         self.extract_jpeg_button.setEnabled(True)
-        self.slider.setEnabled(True)
-        self.similarity_slider.setEnabled(True)  # Re-enable the similarity slider
+        self.similarity_slider.setEnabled(True)
         self.fast_mode_checkbox.setEnabled(True)
-        self.select_file_button.setEnabled(True)
-        self.open_output_button.setEnabled(True)
+        self.fixed_interval_checkbox.setEnabled(True)
+        self.fixed_interval_input.setEnabled(self.fixed_interval_checkbox.isChecked())
+        self.ssim_checkbox.setEnabled(True)
+        self.hist_checkbox.setEnabled(True)
+        self.phash_checkbox.setEnabled(True)
+        self.remove_fading_text_checkbox.setEnabled(True)
 
     def open_output(self):
-        if self.output_path and os.path.exists(self.output_path):
-            try:
-                output_path = Path(self.output_path)
-                print(f"Attempting to open: {output_path}")  # Debug print
-                if sys.platform == 'darwin':  # macOS
-                    subprocess.call(('open', str(output_path)))
-                elif sys.platform == 'win32':  # Windows
-                    os.startfile(str(output_path))
-                else:  # linux variants
-                    subprocess.call(('xdg-open', str(output_path)))
-            except Exception as e:
-                QMessageBox.warning(self, "Error", f"Unable to open the output: {str(e)}")
-        else:
-            QMessageBox.warning(self, "Error", "Output path does not exist.")
+        try:
+            if self.output_path and os.path.exists(self.output_path):
+                if os.path.isfile(self.output_path):  # For PDF output
+                    if sys.platform == 'win32':  # Windows
+                        os.startfile(self.output_path)
+                    else:  # Linux variants
+                        subprocess.call(('xdg-open', self.output_path))
+                elif os.path.isdir(self.output_path):  # For PNG/JPEG output
+                    if sys.platform == 'win32':  # Windows
+                        os.startfile(self.output_path)
+                    else:  # Linux variants
+                        subprocess.call(('xdg-open', self.output_path))
+                else:
+                    QMessageBox.warning(self, "Error", f"Output path exists but is neither a file nor a directory: {self.output_path}")
+            else:
+                QMessageBox.warning(self, "Error", f"Output path does not exist: {self.output_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to open output: {str(e)}")
 
-    def get_unique_filename(self, directory, filename):
-        # Generate a unique filename to avoid overwriting
-        name, ext = os.path.splitext(filename)
-        counter = 1
-        while os.path.exists(os.path.join(directory, filename)):
-            filename = f"{name}_{counter}{ext}"
-            counter += 1
-        return os.path.join(directory, filename)
     def closeEvent(self, event):
         if self.extraction_in_progress:
             reply = QMessageBox.question(self, 'Window Close', 'Extraction is in progress. Are you sure you want to close?',
-                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                                            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if reply == QMessageBox.Yes:
                 self.stop_extraction()
                 event.accept()
@@ -520,21 +470,30 @@ class SlideExtractorGUI(QWidget):
                 event.ignore()
         else:
             event.accept()
-
-    def stop_extraction(self):
-        if self.extractor_thread and self.extractor_thread.isRunning():
+        
+        # Ensure all threads are stopped and resources are released
+        if self.extractor_thread:
             self.extractor_thread.stop()
-            self.extractor_thread.wait()  # Wait for the thread to finish
-        self.extraction_in_progress = False
+            self.extractor_thread.wait()
+        QApplication.instance().quit()
 
-def cleanup():
-    for p in multiprocessing.active_children():
-        p.terminate()
-    gc.collect()
+    
+def setup_global_tooltip_style():
+    QToolTip.setFont(QApplication.font())
+    QToolTip.setStyleSheet("""
+        QToolTip {
+            background-color: #2980b9;
+            color: black;
+            border: 2px solid #1c4966;
+            padding: 5px;
+            border-radius: 3px;
+        }
+    """)
 
 if __name__ == '__main__':
     multiprocessing.freeze_support()
     app = QApplication(sys.argv)
+    setup_global_style()
     single_instance = SingleInstance()
 
     if not single_instance.try_lock():
@@ -549,6 +508,6 @@ if __name__ == '__main__':
         exit_code = app.exec_()
     finally:
         single_instance.unlock()
-        cleanup()
+        del single_instance  # Explicitly delete the single_instance object
 
     sys.exit(exit_code)
