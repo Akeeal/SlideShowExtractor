@@ -19,6 +19,7 @@ fpdf
 scikit-image 
 imagehash 
 Pillow
+gh
 
 # PyQt5==5.15.4
 # opencv-python==4.5.3.56
